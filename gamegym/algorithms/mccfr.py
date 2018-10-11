@@ -171,3 +171,73 @@ class OutcomeMCCFR(MCCFRBase):
         self.outcome_sampling(s0, player, 1.0, 1.0, 1.0, epsilon=epsilon)
 
 
+class ExternalMCCFR(MCCFRBase):
+    def external_sampling(self, state, player_updated, p_reach_updated,
+                         p_reach_others, p_sample, epsilon):
+        """
+        Based on Alg 4 from PhD_Thesis_MarcLanctot.pdf and cfres.cpp from bluff11.zip.
+        Returns (utility, p_tail, p_sample_leaf).
+        """
+
+        if state.is_terminal():
+            #print("\n### {}: player {}, history {}, payoff {}".format(
+            #    self.iteration, player_updated, state.history, state.values()[player_updated]))
+            return (state.values()[player_updated], 1.0, p_sample)
+
+        if state.is_chance():
+            d = state.chance_distribution()
+            a = d.sample(rng=self.rng)
+            state2 = state.play(a)
+            # No need to factor in the chances in Outcome sampling
+            return self.outcome_sampling(state2, player_updated, p_reach_updated,
+                                         p_reach_others, p_sample, epsilon)
+
+        # Extract misc, read infoset from storage
+        player = state.player()
+        info = state.player_information(player)
+        actions = state.actions()
+        infoset = self.get_infoset(player, info, len(actions))
+
+        # Create dists, sample the action
+        dist = self.regret_matching(infoset.regret)
+        if player == player_updated:
+            dist_sample = dist * (1.0 - epsilon) + 1.0 * epsilon / len(actions)
+        else:
+            dist_sample = dist
+        assert np.abs(np.sum(dist) - 1.0) < 1e-3
+        assert np.abs(np.sum(dist_sample) - 1.0) < 1e-3
+        action_idx = self.rng.choice(len(actions), p=dist_sample)
+        action = actions[action_idx]
+
+        # Future state
+        state2 = state.play(action)
+
+        if state.player() == player_updated:
+            payoff, p_tail, p_sample_leaf = self.outcome_sampling(
+                state2, player_updated, p_reach_updated * dist[action_idx],
+                p_reach_others, p_sample * dist_sample[action_idx], epsilon)
+            dr = np.zeros_like(infoset.regret)
+            U = payoff * p_reach_others / p_sample_leaf
+            #print(U, payoff, p_reach_others, p_sample_leaf, p_tail, dist)
+            for ai in range(len(actions)):
+                if ai == action_idx:
+                    dr[ai] = U * (p_tail - p_tail * dist[action_idx])
+                else:
+                    dr[ai] = -U * p_tail * dist[action_idx]
+            self.update_infoset(player, info, infoset, delta_r=dr)
+        else:
+            payoff, p_tail, p_sample_leaf = self.outcome_sampling(
+                state2, player_updated, p_reach_updated,
+                p_reach_others * dist[action_idx], p_sample * dist_sample[action_idx], epsilon)
+            self.update_infoset(player, info, infoset,
+                                delta_s=p_reach_updated / p_sample_leaf * dist)
+
+        return (payoff, p_tail * dist[action_idx], p_sample_leaf)
+
+#    def compute(self, iterations, epsilon=0.6):
+#        while True:                    
+#
+#            for _i in range(iterations):
+#            for player in range(self.game.players()):
+#                s0 = self.game.initial_state()
+#                self.external_sampling(s0, player, 1.0, 1.0, 1.0, epsilon=epsilon)
