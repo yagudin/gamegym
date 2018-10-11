@@ -96,6 +96,7 @@ class MCCFRBase(strategy.Strategy):
                 pr.update(it)
                 for player in range(self.game.players()):
                     self.sampling(player, epsilon=epsilon)
+                self.iterations += 1
 
     def sampling(self, epsilon):
         raise NotImplementedError

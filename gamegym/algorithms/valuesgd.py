@@ -90,7 +90,5 @@ class SparseStochasticValueLearning:
             self.iteration(strategies, alpha=alpha)
             if store_step and i % store_step == 0:
                 values.append(self.store.values.copy())
-            if i % (iterations // 20) == 0:
-                print(i, self.store.values)
         if store_step:
             return np.array(values)
